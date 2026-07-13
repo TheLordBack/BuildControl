@@ -1,302 +1,32 @@
 const API_BASE_URL = "https://buildcontrol-api.vercel.app";
 
-const sessaoSalva = JSON.parse(localStorage.getItem("buildcontrol_session"));
-
-if (!sessaoSalva || !sessaoSalva.access_token) {
-  window.location.href = "login.html";
-}
+const sessaoSalva = lerJSONLocal("buildcontrol_session", null);
+if (!sessaoSalva?.access_token) window.location.replace("login.html");
 
 let materiais = [];
 let guardados = [];
 let editandoMaterial = null;
 let editandoGuardado = null;
-let grafico = null;
+let filtroMaterial = "Todos";
+let buscaMaterial = "";
 let eventoInstalacao = null;
 let salvando = false;
 let timerSalvamento = null;
 
-const moeda = new Intl.NumberFormat("pt-BR", {
-  style: "currency",
-  currency: "BRL"
-});
+const moeda = new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" });
+const moedaCurta = new Intl.NumberFormat("pt-BR", { notation: "compact", maximumFractionDigits: 1 });
+const $ = id => document.getElementById(id);
 
-const $ = (id) => document.getElementById(id);
-
-function toast(texto) {
-  const antigo = document.querySelector(".toast");
-  if (antigo) antigo.remove();
-
-  const div = document.createElement("div");
-  div.className = "toast";
-  div.textContent = texto;
-  document.body.appendChild(div);
-
-  setTimeout(() => div.remove(), 2200);
-}
-
-function atualizarStatusSync(texto) {
-  const el = $("syncStatus");
-  if (el) el.textContent = texto;
-}
-
-function lerBackupLocal() {
-  return {
-    materiais: JSON.parse(localStorage.getItem("buildcontrol_materiais")) || [],
-    guardados: JSON.parse(localStorage.getItem("buildcontrol_guardados")) || []
-  };
-}
-
-function salvarLocal() {
-  localStorage.setItem("buildcontrol_materiais", JSON.stringify(materiais));
-  localStorage.setItem("buildcontrol_guardados", JSON.stringify(guardados));
-}
-
-async function carregarDadosOnline() {
+function lerJSONLocal(chave, padrao) {
   try {
-    atualizarStatusSync("Carregando online...");
-
-    const resposta = await fetch(`${API_BASE_URL}/api/dados`, {
-      method: "GET",
-      headers: {
-        Authorization: `Bearer ${sessaoSalva.access_token}`
-      }
-    });
-
-    const dados = await resposta.json();
-
-    if (!resposta.ok) {
-      console.error("Erro ao carregar dados:", dados);
-
-      if (resposta.status === 401) {
-        localStorage.removeItem("buildcontrol_session");
-        localStorage.removeItem("buildcontrol_user");
-        window.location.href = "login.html";
-        return;
-      }
-
-      const backup = lerBackupLocal();
-      materiais = backup.materiais;
-      guardados = backup.guardados;
-      renderizar(false);
-      atualizarStatusSync("Erro online");
-      toast(dados.erro || "Erro ao carregar dados online.");
-      return;
-    }
-
-    materiais = Array.isArray(dados.materiais) ? dados.materiais : [];
-    guardados = Array.isArray(dados.guardados) ? dados.guardados : [];
-
-    salvarLocal();
-    renderizar(false);
-    atualizarStatusSync("Online sincronizado");
-  } catch (error) {
-    console.error("Erro ao carregar online:", error);
-
-    const backup = lerBackupLocal();
-    materiais = backup.materiais;
-    guardados = backup.guardados;
-
-    renderizar(false);
-    atualizarStatusSync("Sem conexão");
-    toast("Sem conexão com a API.");
+    const valor = localStorage.getItem(chave);
+    return valor ? JSON.parse(valor) : padrao;
+  } catch {
+    return padrao;
   }
 }
 
-async function salvarOnline(forcar = false) {
-  salvarLocal();
-
-  if (!sessaoSalva || !sessaoSalva.access_token) return;
-
-  if (salvando) return;
-
-  if (!forcar) {
-    clearTimeout(timerSalvamento);
-    timerSalvamento = setTimeout(() => salvarOnline(true), 500);
-    return;
-  }
-
-  try {
-    salvando = true;
-    atualizarStatusSync("Salvando online...");
-
-    const resposta = await fetch(`${API_BASE_URL}/api/dados`, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: `Bearer ${sessaoSalva.access_token}`
-      },
-      body: JSON.stringify({
-        materiais,
-        guardados
-      })
-    });
-
-    const resultado = await resposta.json();
-
-    if (!resposta.ok) {
-      console.error("Erro ao salvar online:", resultado);
-
-      if (resposta.status === 401) {
-        localStorage.removeItem("buildcontrol_session");
-        localStorage.removeItem("buildcontrol_user");
-        window.location.href = "login.html";
-        return;
-      }
-
-      atualizarStatusSync("Erro ao salvar");
-      toast(resultado.erro || "Erro ao salvar online.");
-      return;
-    }
-
-    atualizarStatusSync("Salvo online");
-  } catch (error) {
-    console.error("Erro de conexão ao salvar:", error);
-    atualizarStatusSync("Sem conexão");
-    toast("Sem conexão com a API.");
-  } finally {
-    salvando = false;
-  }
-}
-
-function atualizarStatusAutomatico() {
-  const totalGuardado = guardados.reduce((soma, item) => soma + Number(item.valor || 0), 0);
-  let saldoDisponivel = totalGuardado;
-
-  materiais.forEach((item) => {
-    const totalMaterial = Number(item.quantidade || 0) * Number(item.valor || 0);
-
-    if (saldoDisponivel >= totalMaterial && totalMaterial > 0) {
-      item.status = "Concluído";
-      saldoDisponivel -= totalMaterial;
-    } else if (saldoDisponivel > 0) {
-      item.status = "Parcial";
-      saldoDisponivel = 0;
-    } else {
-      item.status = "Pendente";
-    }
-  });
-}
-
-function salvarMaterial() {
-  const nome = $("nomeMaterial").value.trim();
-  const quantidade = Number($("quantidadeMaterial").value);
-  const valor = Number($("valorMaterial").value);
-
-  if (!nome || quantidade <= 0 || valor <= 0) {
-    toast("Preencha todos os campos do material.");
-    return;
-  }
-
-  const novoMaterial = {
-    nome,
-    quantidade,
-    valor,
-    status: "Pendente"
-  };
-
-  if (editandoMaterial !== null) {
-    materiais[editandoMaterial] = novoMaterial;
-    toast("Material atualizado.");
-  } else {
-    materiais.push(novoMaterial);
-    toast("Material adicionado.");
-  }
-
-  cancelarEdicaoMaterial();
-  renderizar(true);
-}
-
-function editarMaterial(index) {
-  const item = materiais[index];
-  if (!item) return;
-
-  $("nomeMaterial").value = item.nome;
-  $("quantidadeMaterial").value = item.quantidade;
-  $("valorMaterial").value = item.valor;
-
-  editandoMaterial = index;
-  $("btnMaterial").textContent = "Salvar";
-  $("cancelarMaterial").classList.remove("hidden");
-
-  window.scrollTo({ top: 0, behavior: "smooth" });
-}
-
-function cancelarEdicaoMaterial() {
-  editandoMaterial = null;
-
-  $("nomeMaterial").value = "";
-  $("quantidadeMaterial").value = "";
-  $("valorMaterial").value = "";
-
-  $("btnMaterial").textContent = "+ Adicionar";
-  $("cancelarMaterial").classList.add("hidden");
-}
-
-function excluirMaterial(index) {
-  if (!confirm("Deseja excluir este material?")) return;
-
-  materiais.splice(index, 1);
-  renderizar(true);
-  toast("Material excluído.");
-}
-
-function salvarGuardado() {
-  const mes = $("mesGuardado").value.trim();
-  const valor = Number($("valorGuardadoInput").value);
-
-  if (!mes || valor <= 0) {
-    toast("Preencha o mês e o valor.");
-    return;
-  }
-
-  const novo = {
-    mes,
-    valor
-  };
-
-  if (editandoGuardado !== null) {
-    guardados[editandoGuardado] = novo;
-    toast("Valor atualizado.");
-  } else {
-    guardados.push(novo);
-    toast("Valor adicionado.");
-  }
-
-  cancelarEdicaoGuardado();
-  renderizar(true);
-}
-
-function editarGuardado(index) {
-  const item = guardados[index];
-  if (!item) return;
-
-  $("mesGuardado").value = item.mes;
-  $("valorGuardadoInput").value = item.valor;
-
-  editandoGuardado = index;
-  $("btnGuardado").textContent = "Salvar";
-  $("cancelarGuardado").classList.remove("hidden");
-}
-
-function cancelarEdicaoGuardado() {
-  editandoGuardado = null;
-
-  $("mesGuardado").value = "";
-  $("valorGuardadoInput").value = "";
-
-  $("btnGuardado").textContent = "+ Adicionar";
-  $("cancelarGuardado").classList.add("hidden");
-}
-
-function excluirGuardado(index) {
-  if (!confirm("Deseja excluir este valor?")) return;
-
-  guardados.splice(index, 1);
-  renderizar(true);
-  toast("Valor excluído.");
-}
-
-function limparTexto(texto) {
+function escapar(texto) {
   return String(texto ?? "")
     .replace(/&/g, "&amp;")
     .replace(/</g, "&lt;")
@@ -305,426 +35,496 @@ function limparTexto(texto) {
     .replace(/'/g, "&#039;");
 }
 
-function obterIconeMaterial(nome) {
-  const texto = String(nome || "").toLowerCase();
+async function lerRespostaJSON(resposta) {
+  const texto = await resposta.text();
+  if (!texto) return {};
+  try { return JSON.parse(texto); } catch { return { erro: texto }; }
+}
 
-  if (texto.includes("telha")) {
-    return { emoji: "🏠", tipo: "tipo-telha" };
+function toast(texto) {
+  const item = document.createElement("div");
+  item.className = "toast";
+  item.textContent = texto;
+  $("toastContainer")?.appendChild(item);
+  setTimeout(() => item.remove(), 2600);
+}
+
+function atualizarStatusSync(texto, tipo = "online") {
+  const el = $("syncStatus");
+  if (!el) return;
+  el.innerHTML = `<i></i> ${escapar(texto)}`;
+  el.dataset.tipo = tipo;
+}
+
+function lerBackupLocal() {
+  return {
+    materiais: lerJSONLocal("buildcontrol_materiais", []),
+    guardados: lerJSONLocal("buildcontrol_guardados", [])
+  };
+}
+
+function salvarLocal() {
+  localStorage.setItem("buildcontrol_materiais", JSON.stringify(materiais));
+  localStorage.setItem("buildcontrol_guardados", JSON.stringify(guardados));
+}
+
+function limparSessao() {
+  localStorage.removeItem("buildcontrol_session");
+  localStorage.removeItem("buildcontrol_user");
+}
+
+async function carregarDadosOnline() {
+  try {
+    atualizarStatusSync("Carregando online...");
+    const resposta = await fetch(`${API_BASE_URL}/api/dados`, {
+      headers: { Authorization: `Bearer ${sessaoSalva.access_token}` }
+    });
+    const dados = await lerRespostaJSON(resposta);
+    if (!resposta.ok) {
+      if (resposta.status === 401) {
+        limparSessao();
+        window.location.replace("login.html");
+        return;
+      }
+      throw new Error(dados.erro || "Erro ao carregar dados.");
+    }
+    materiais = Array.isArray(dados.materiais) ? dados.materiais : [];
+    guardados = Array.isArray(dados.guardados) ? dados.guardados : [];
+    salvarLocal();
+    renderizarTudo(false);
+    atualizarStatusSync("Online sincronizado");
+  } catch (erro) {
+    console.error(erro);
+    const backup = lerBackupLocal();
+    materiais = backup.materiais;
+    guardados = backup.guardados;
+    renderizarTudo(false);
+    atualizarStatusSync("Usando backup local", "offline");
+    toast("Sem conexão com a API. O backup local foi carregado.");
   }
+}
 
-  if (texto.includes("cimento")) {
-    return { emoji: "🪣", tipo: "tipo-cimento" };
+async function salvarOnline(forcar = false) {
+  salvarLocal();
+  if (!sessaoSalva?.access_token) return;
+  if (!forcar) {
+    clearTimeout(timerSalvamento);
+    timerSalvamento = setTimeout(() => salvarOnline(true), 450);
+    return;
   }
-
-  if (texto.includes("areia")) {
-    return { emoji: "⛰️", tipo: "tipo-areia" };
+  if (salvando) return;
+  try {
+    salvando = true;
+    atualizarStatusSync("Salvando online...");
+    const resposta = await fetch(`${API_BASE_URL}/api/dados`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${sessaoSalva.access_token}`
+      },
+      body: JSON.stringify({ materiais, guardados })
+    });
+    const dados = await lerRespostaJSON(resposta);
+    if (!resposta.ok) {
+      if (resposta.status === 401) {
+        limparSessao();
+        window.location.replace("login.html");
+        return;
+      }
+      throw new Error(dados.erro || "Erro ao salvar dados.");
+    }
+    atualizarStatusSync("Salvo online");
+  } catch (erro) {
+    console.error(erro);
+    atualizarStatusSync("Salvo somente no aparelho", "offline");
+    toast("Os dados ficaram salvos no aparelho e serão enviados quando houver conexão.");
+  } finally {
+    salvando = false;
   }
+}
 
-  if (texto.includes("pedra") || texto.includes("brita")) {
-    return { emoji: "🪨", tipo: "tipo-pedra" };
-  }
+function totais() {
+  const totalMateriais = materiais.reduce((soma, item) => soma + Number(item.quantidade || 0) * Number(item.valor || 0), 0);
+  const totalGuardado = guardados.reduce((soma, item) => soma + Number(item.valor || 0), 0);
+  const faltaPagar = Math.max(totalMateriais - totalGuardado, 0);
+  const percentual = totalMateriais > 0 ? Math.min(100, (totalGuardado / totalMateriais) * 100) : 0;
+  return { totalMateriais, totalGuardado, faltaPagar, percentual };
+}
 
-  if (texto.includes("tijolo") || texto.includes("bloco")) {
-    return { emoji: "🧱", tipo: "tipo-tijolo" };
-  }
+function atualizarStatusAutomatico() {
+  let saldo = totais().totalGuardado;
+  materiais.forEach(item => {
+    const total = Number(item.quantidade || 0) * Number(item.valor || 0);
+    if (total > 0 && saldo >= total) {
+      item.status = "Concluído";
+      item.cobertura = 100;
+      saldo -= total;
+    } else if (total > 0 && saldo > 0) {
+      item.status = "Parcial";
+      item.cobertura = Math.min(100, (saldo / total) * 100);
+      saldo = 0;
+    } else {
+      item.status = "Pendente";
+      item.cobertura = 0;
+    }
+  });
+}
 
-  if (texto.includes("ferro") || texto.includes("aço") || texto.includes("aco") || texto.includes("vergalhão")) {
-    return { emoji: "⚙️", tipo: "tipo-ferro" };
-  }
+function normalizar(texto) {
+  return String(texto || "").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+}
 
-  if (texto.includes("madeira") || texto.includes("tábua") || texto.includes("tabua")) {
-    return { emoji: "🪵", tipo: "tipo-madeira" };
-  }
+function infoMaterial(nome) {
+  const texto = normalizar(nome);
+  if (texto.includes("cimento") || texto.includes("argamassa") || texto.includes("cal")) return { emoji: "🪣", categoria: "Cimento e argamassa", cor: "#ffbf00" };
+  if (texto.includes("tijolo") || texto.includes("bloco")) return { emoji: "🧱", categoria: "Tijolos e blocos", cor: "#ff8b38" };
+  if (texto.includes("areia") || texto.includes("brita") || texto.includes("pedra")) return { emoji: "⛰", categoria: "Areia e brita", cor: "#3d9cff" };
+  if (texto.includes("ferro") || texto.includes("aco") || texto.includes("vergalhao") || texto.includes("coluna")) return { emoji: "⚙", categoria: "Ferragens", cor: "#8b6cf6" };
+  if (texto.includes("madeira") || texto.includes("tabua") || texto.includes("caibro") || texto.includes("ripa")) return { emoji: "🪵", categoria: "Madeiras", cor: "#b87b43" };
+  if (texto.includes("telha")) return { emoji: "⌂", categoria: "Cobertura", cor: "#e45c68" };
+  if (texto.includes("fio") || texto.includes("cabo") || texto.includes("disjuntor") || texto.includes("tomada")) return { emoji: "⚡", categoria: "Elétrica", cor: "#f4d34f" };
+  if (texto.includes("cano") || texto.includes("tubo") || texto.includes("registro")) return { emoji: "◉", categoria: "Hidráulica", cor: "#27c8c8" };
+  if (texto.includes("tinta") || texto.includes("massa corrida")) return { emoji: "◐", categoria: "Acabamento", cor: "#ef6fca" };
+  return { emoji: "▦", categoria: "Outros", cor: "#7891af" };
+}
 
-  if (texto.includes("tinta")) {
-    return { emoji: "🎨", tipo: "tipo-tinta" };
-  }
+function classeStatus(status) {
+  return normalizar(status).replace(/\s+/g, "-");
+}
 
-  if (texto.includes("cano") || texto.includes("tubo")) {
-    return { emoji: "🔵", tipo: "tipo-cano" };
-  }
+function categoriasAgrupadas() {
+  const mapa = new Map();
+  materiais.forEach(item => {
+    const info = infoMaterial(item.nome);
+    const valor = Number(item.quantidade || 0) * Number(item.valor || 0);
+    if (!mapa.has(info.categoria)) mapa.set(info.categoria, { nome: info.categoria, valor: 0, cor: info.cor });
+    mapa.get(info.categoria).valor += valor;
+  });
+  return [...mapa.values()].sort((a, b) => b.valor - a.valor);
+}
 
-  if (texto.includes("fio") || texto.includes("cabo")) {
-    return { emoji: "🔌", tipo: "tipo-fio" };
-  }
+function atualizarResumo() {
+  const { totalMateriais, totalGuardado, faltaPagar, percentual } = totais();
+  const set = (id, valor) => { if ($(id)) $(id).textContent = valor; };
+  set("totalMateriais", moeda.format(totalMateriais));
+  set("totalGuardado", moeda.format(totalGuardado));
+  set("faltaPagar", moeda.format(faltaPagar));
+  set("qtdMateriaisResumo", `${materiais.length} ${materiais.length === 1 ? "item cadastrado" : "itens cadastrados"}`);
+  set("qtdMesesResumo", `${guardados.length} ${guardados.length === 1 ? "mês registrado" : "meses registrados"}`);
+  set("porcentagemFalta", `${totalMateriais ? Math.round((faltaPagar / totalMateriais) * 100) : 0}% do total`);
+  set("progressoPercentual", `${Math.round(percentual)}%`);
+  set("relatorioPercentual", `${Math.round(percentual)}%`);
+  set("progressoLegenda", totalMateriais ? `${moeda.format(totalGuardado)} de ${moeda.format(totalMateriais)}` : "Comece adicionando materiais");
+  set("totalGuardadoPagina", moeda.format(totalGuardado));
+  set("mediaGuardada", `Média mensal: ${moeda.format(guardados.length ? totalGuardado / guardados.length : 0)}`);
+  set("relatorioPlanejado", moeda.format(totalMateriais));
+  set("relatorioGuardado", moeda.format(totalGuardado));
+  set("relatorioRestante", moeda.format(faltaPagar));
+  if ($("progressoBarra")) $("progressoBarra").style.width = `${percentual}%`;
+  if ($("relatorioBarra")) $("relatorioBarra").style.width = `${percentual}%`;
+}
 
-  if (texto.includes("porta")) {
-    return { emoji: "🚪", tipo: "tipo-porta" };
-  }
-
-  if (texto.includes("janela")) {
-    return { emoji: "🪟", tipo: "tipo-janela" };
-  }
-
-  return { emoji: "📦", tipo: "tipo-default" };
+function materialCard(item, index) {
+  const info = infoMaterial(item.nome);
+  const total = Number(item.quantidade || 0) * Number(item.valor || 0);
+  return `
+    <article class="material-card">
+      <span class="material-badge" style="background:${info.cor}18;color:${info.cor}">${info.emoji}</span>
+      <div class="material-main">
+        <h3>${escapar(item.nome)}</h3>
+        <p>${escapar(item.quantidade)} un. × ${moeda.format(Number(item.valor || 0))} • ${escapar(info.categoria)}</p>
+        <div class="material-price"><strong>${escapar(item.status || "Pendente")}</strong><div class="coverage-mini"><span style="width:${Number(item.cobertura || 0)}%;background:${info.cor}"></span></div></div>
+      </div>
+      <div class="material-actions">
+        <strong>${moeda.format(total)}</strong>
+        <div class="card-menu"><button class="small-icon-button" type="button" data-edit-material="${index}" title="Editar">✎</button><button class="small-icon-button delete" type="button" data-delete-material="${index}" title="Excluir">⌫</button></div>
+      </div>
+    </article>`;
 }
 
 function renderizarMateriais() {
   const lista = $("listaMateriais");
-  lista.innerHTML = "";
-
-  if (materiais.length === 0) {
-    lista.innerHTML = `
-      <tr>
-        <td colspan="6" class="empty">Nenhum material adicionado ainda</td>
-      </tr>
-    `;
-    return;
-  }
-
-  materiais.forEach((item, index) => {
-    const total = Number(item.quantidade || 0) * Number(item.valor || 0);
-
-    const classe = String(item.status || "Pendente")
-      .toLowerCase()
-      .normalize("NFD")
-      .replace(/[\u0300-\u036f]/g, "");
-
-    const infoIcone = obterIconeMaterial(item.nome);
-
-    lista.innerHTML += `
-      <tr class="material-row">
-        <td class="material-name" data-label="Material">
-          <div class="material-cell">
-           <span class="material-icon material-emoji ${infoIcone.tipo}">
-  ${infoIcone.emoji}
-</span>
-
-            </span>
-
-            <strong>${limparTexto(item.nome)}</strong>
-          </div>
-        </td>
-
-        <td data-label="Qtd">${limparTexto(item.quantidade)}</td>
-
-        <td data-label="Valor unit.">
-          ${moeda.format(Number(item.valor || 0))}
-        </td>
-
-        <td data-label="Total">
-          ${moeda.format(total)}
-        </td>
-
-        <td data-label="Status">
-          <span class="status ${classe}">
-            ${limparTexto(item.status)}
-          </span>
-        </td>
-
-        <td data-label="Ações">
-          <div class="actions">
-            <button class="icon-btn edit-btn" onclick="editarMaterial(${index})" title="Editar">
-              <i data-lucide="pencil"></i>
-            </button>
-
-            <button class="icon-btn delete-btn" onclick="excluirMaterial(${index})" title="Excluir">
-              <i data-lucide="trash-2"></i>
-            </button>
-          </div>
-        </td>
-      </tr>
-    `;
+  if (!lista) return;
+  const filtrados = materiais.map((item, index) => ({ item, index })).filter(({ item }) => {
+    const passaBusca = normalizar(item.nome).includes(normalizar(buscaMaterial));
+    const passaFiltro = filtroMaterial === "Todos" || item.status === filtroMaterial;
+    return passaBusca && passaFiltro;
   });
+  lista.innerHTML = filtrados.length ? filtrados.map(({ item, index }) => materialCard(item, index)).join("") : `<div class="empty-state" style="grid-column:1/-1">Nenhum material encontrado.</div>`;
+}
 
-  if (window.lucide) {
-    lucide.createIcons();
-  }
+function renderizarMateriaisRecentes() {
+  const lista = $("materiaisRecentes");
+  if (!lista) return;
+  const recentes = materiais.slice(-5).reverse();
+  lista.innerHTML = recentes.length ? recentes.map(item => {
+    const info = infoMaterial(item.nome);
+    const total = Number(item.quantidade || 0) * Number(item.valor || 0);
+    return `<div class="recent-row"><span class="material-badge" style="background:${info.cor}18;color:${info.cor}">${info.emoji}</span><div><strong>${escapar(item.nome)}</strong><small>${escapar(item.quantidade)} un. • ${escapar(info.categoria)}</small></div><div class="recent-value"><strong>${moeda.format(total)}</strong><span class="status-dot ${classeStatus(item.status)}">${escapar(item.status)}</span></div></div>`;
+  }).join("") : `<div class="empty-state">Nenhum material adicionado.</div>`;
 }
 
 function renderizarGuardados() {
   const lista = $("listaGuardado");
-  lista.innerHTML = "";
+  if (!lista) return;
+  lista.innerHTML = guardados.length ? guardados.map((item, index) => `
+    <article class="saving-card">
+      <span>${escapar(item.mes)}</span>
+      <strong>${moeda.format(Number(item.valor || 0))}</strong>
+      <div class="card-menu"><button class="small-icon-button" type="button" data-edit-saving="${index}" title="Editar">✎</button><button class="small-icon-button delete" type="button" data-delete-saving="${index}" title="Excluir">⌫</button></div>
+    </article>`).join("") : `<div class="empty-state" style="grid-column:1/-1">Nenhum valor guardado registrado.</div>`;
+}
 
-  const totalGuardado = guardados.reduce(
-    (soma, item) => soma + Number(item.valor || 0),
-    0
-  );
+function corGradienteCategorias(dados) {
+  const total = dados.reduce((s, i) => s + i.valor, 0);
+  if (!total) return "conic-gradient(#263447 0 100%)";
+  let acumulado = 0;
+  const partes = dados.map(item => {
+    const inicio = acumulado;
+    acumulado += (item.valor / total) * 100;
+    return `${item.cor} ${inicio}% ${acumulado}%`;
+  });
+  return `conic-gradient(${partes.join(",")})`;
+}
 
-  const totalRodape = $("totalGuardadoRodape");
-  if (totalRodape) {
-    totalRodape.textContent = moeda.format(totalGuardado);
-  }
+function renderizarCategorias() {
+  const dados = categoriasAgrupadas();
+  const total = totais().totalMateriais;
+  const gradiente = corGradienteCategorias(dados);
+  ["donutHome", "donutReport"].forEach(id => { if ($(id)) $(id).style.background = gradiente; });
+  if ($("donutHomeTotal")) $("donutHomeTotal").textContent = `R$ ${moedaCurta.format(total)}`;
+  if ($("donutReportTotal")) $("donutReportTotal").textContent = `R$ ${moedaCurta.format(total)}`;
+  const html = dados.length ? dados.slice(0, 7).map(item => `<div class="legend-row"><i class="legend-color" style="background:${item.cor}"></i><span>${escapar(item.nome)}</span><strong>${total ? Math.round(item.valor / total * 100) : 0}%</strong></div>`).join("") : `<div class="empty-state">Sem dados.</div>`;
+  if ($("categoriasHome")) $("categoriasHome").innerHTML = html;
+  if ($("categoriasRelatorio")) $("categoriasRelatorio").innerHTML = html;
+}
 
-  if (guardados.length === 0) {
-    lista.innerHTML = `
-      <div class="money-empty">
-        Nenhum mês adicionado ainda
-      </div>
-    `;
+function renderizarGrafico() {
+  const area = $("graficoGuardado");
+  if (!area) return;
+  const valores = guardados.map(item => Number(item.valor || 0));
+  if (!valores.length) {
+    area.innerHTML = `<div class="empty-state">Adicione valores guardados para gerar o gráfico.</div>`;
     return;
   }
-
-  const metade = Math.ceil(guardados.length / 2);
-  const primeiraColuna = guardados.slice(0, metade);
-  const segundaColuna = guardados.slice(metade);
-
-  function criarTabela(itens, inicioIndex) {
-    return `
-      <div class="money-table">
-        <div class="money-table-head">
-          <span>Mês</span>
-          <span>Valor guardado (R$)</span>
-          <span>Ações</span>
-        </div>
-
-        ${itens.map((item, i) => {
-          const index = inicioIndex + i;
-
-          return `
-            <div class="money-table-row">
-              <div class="money-month">
-                <i data-lucide="calendar-days"></i>
-                <span>${limparTexto(item.mes)}</span>
-              </div>
-
-              <strong>${moeda.format(Number(item.valor || 0))}</strong>
-
-              <div class="actions money-actions">
-                <button class="icon-btn edit-btn" onclick="editarGuardado(${index})" title="Editar">
-                  <i data-lucide="pencil"></i>
-                </button>
-
-                <button class="icon-btn delete-btn" onclick="excluirGuardado(${index})" title="Excluir">
-                  <i data-lucide="trash-2"></i>
-                </button>
-              </div>
-            </div>
-          `;
-        }).join("")}
-      </div>
-    `;
-  }
-
-  lista.innerHTML = `
-    ${criarTabela(primeiraColuna, 0)}
-    ${criarTabela(segundaColuna, metade)}
-  `;
-
-  if (window.lucide) {
-    lucide.createIcons();
-  }
-}
-
-function atualizarResumo() {
-  const totalMateriais = materiais.reduce(
-    (soma, item) => soma + Number(item.quantidade || 0) * Number(item.valor || 0),
-    0
-  );
-
-  const totalGuardado = guardados.reduce(
-    (soma, item) => soma + Number(item.valor || 0),
-    0
-  );
-
-  const faltaPagar = Math.max(totalMateriais - totalGuardado, 0);
-
-  const totalMateriaisEl = $("totalMateriais");
-  const totalGuardadoEl = $("totalGuardado");
-  const faltaPagarEl = $("faltaPagar");
-
-  if (totalMateriaisEl) {
-    totalMateriaisEl.textContent = moeda.format(totalMateriais);
-  }
-
-  if (totalGuardadoEl) {
-    totalGuardadoEl.textContent = moeda.format(totalGuardado);
-  }
-
-  if (faltaPagarEl) {
-    faltaPagarEl.textContent = moeda.format(faltaPagar);
-  }
-
-  const qtdMateriaisResumo = $("qtdMateriaisResumo");
-  const qtdMesesResumo = $("qtdMesesResumo");
-  const porcentagemFalta = $("porcentagemFalta");
-  const totalGuardadoRodape = $("totalGuardadoRodape");
-
-  if (qtdMateriaisResumo) {
-    const textoItem = materiais.length === 1 ? "item cadastrado" : "itens cadastrados";
-    qtdMateriaisResumo.textContent = `${materiais.length} ${textoItem}`;
-  }
-
-  if (qtdMesesResumo) {
-    const textoMes = guardados.length === 1 ? "mês registrado" : "meses registrados";
-    qtdMesesResumo.textContent = `${guardados.length} ${textoMes}`;
-  }
-
-  if (porcentagemFalta) {
-    const percentual = totalMateriais > 0
-      ? Math.round((faltaPagar / totalMateriais) * 100)
-      : 0;
-
-    porcentagemFalta.textContent = `${percentual}% do total`;
-  }
-
-  if (totalGuardadoRodape) {
-    totalGuardadoRodape.textContent = moeda.format(totalGuardado);
-  }
-}
-function atualizarGrafico() {
-  const canvas = $("graficoGuardado");
-  if (!canvas || typeof Chart === "undefined") return;
-
-  if (grafico) grafico.destroy();
-
-  const labels = guardados.map((item) => item.mes);
-  const valores = guardados.map((item) => Number(item.valor || 0));
-
-  grafico = new Chart(canvas, {
-    type: "bar",
-    data: {
-      labels,
-      datasets: [
-        {
-          data: valores,
-          backgroundColor: "rgba(59, 130, 246, 0.78)",
-          borderColor: "rgba(96, 165, 250, 1)",
-          borderWidth: 1,
-          borderRadius: 8
-        }
-      ]
-    },
-    options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: {
-          display: false
-        }
-      },
-      scales: {
-        x: {
-          ticks: {
-            color: "#b8b8b8",
-            font: {
-              size: 10
-            }
-          },
-          grid: {
-            display: false
-          }
-        },
-        y: {
-          beginAtZero: true,
-          ticks: {
-            color: "#b8b8b8",
-            font: {
-              size: 10
-            },
-            callback: function (value) {
-              return moeda.format(value).replace(",00", "");
-            }
-          },
-          grid: {
-            color: "rgba(255, 255, 255, .06)"
-          }
-        }
-      }
-    }
+  const largura = 900, altura = 230, paddingX = 34, paddingY = 24;
+  const max = Math.max(...valores, 1);
+  const passo = valores.length > 1 ? (largura - paddingX * 2) / (valores.length - 1) : 0;
+  const pontos = valores.map((valor, i) => {
+    const x = valores.length > 1 ? paddingX + passo * i : largura / 2;
+    const y = altura - paddingY - (valor / max) * (altura - paddingY * 2);
+    return { x, y, valor };
   });
+  const linha = pontos.map(p => `${p.x},${p.y}`).join(" ");
+  const areaPontos = `${paddingX},${altura - paddingY} ${linha} ${pontos.at(-1).x},${altura - paddingY}`;
+  const grades = [0, .25, .5, .75, 1].map(fracao => {
+    const y = altura - paddingY - fracao * (altura - paddingY * 2);
+    return `<line class="chart-grid-line" x1="${paddingX}" x2="${largura - paddingX}" y1="${y}" y2="${y}"></line>`;
+  }).join("");
+  const dots = pontos.map(p => `<circle class="chart-dot" cx="${p.x}" cy="${p.y}" r="5"><title>${moeda.format(p.valor)}</title></circle>`).join("");
+  area.innerHTML = `<svg viewBox="0 0 ${largura} ${altura}" preserveAspectRatio="none"><defs><linearGradient id="chartGradient" x1="0" x2="0" y1="0" y2="1"><stop offset="0%" stop-color="#ffbf00" stop-opacity=".28"/><stop offset="100%" stop-color="#ffbf00" stop-opacity="0"/></linearGradient></defs>${grades}<polygon class="chart-area-fill" points="${areaPontos}"></polygon><polyline class="chart-line" points="${linha}"></polyline>${dots}</svg><div class="chart-labels">${guardados.map(item => `<span>${escapar(String(item.mes).slice(0,3))}</span>`).join("")}</div>`;
+}
+
+function renderizarPerfil() {
+  const usuario = lerJSONLocal("buildcontrol_user", {}) || {};
+  const nome = usuario.nome || usuario.name || usuario.user_metadata?.nome || usuario.email?.split("@")[0] || "Usuário";
+  const email = usuario.email || "Usuário do BuildControl";
+  const primeiro = String(nome).trim().split(/\s+/)[0] || "Usuário";
+  if ($("nomeUsuarioHome")) $("nomeUsuarioHome").textContent = primeiro;
+  if ($("nomeUsuarioPerfil")) $("nomeUsuarioPerfil").textContent = nome;
+  if ($("emailUsuarioPerfil")) $("emailUsuarioPerfil").textContent = email;
+  if ($("avatarUsuario")) $("avatarUsuario").textContent = primeiro.charAt(0).toUpperCase();
+}
+
+function renderizarTudo(sincronizar = true) {
+  atualizarStatusAutomatico();
+  salvarLocal();
+  atualizarResumo();
+  renderizarMateriais();
+  renderizarMateriaisRecentes();
+  renderizarGuardados();
+  renderizarCategorias();
+  renderizarGrafico();
+  renderizarPerfil();
+  if (sincronizar) salvarOnline();
+}
+
+function mudarView(view) {
+  document.querySelectorAll(".app-view").forEach(secao => secao.classList.toggle("active", secao.dataset.view === view));
+  document.querySelectorAll(".nav-item[data-go-view]").forEach(botao => botao.classList.toggle("active", botao.dataset.goView === view));
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function abrirModal(tipo, index = null) {
+  const overlay = $("modalOverlay");
+  const formMaterial = $("formMaterial");
+  const formGuardado = $("formGuardado");
+  formMaterial.classList.toggle("hidden", tipo !== "material");
+  formGuardado.classList.toggle("hidden", tipo !== "guardado");
+  if (tipo === "material") {
+    editandoMaterial = Number.isInteger(index) ? index : null;
+    const item = editandoMaterial !== null ? materiais[editandoMaterial] : null;
+    $("tituloMaterial").textContent = item ? "Editar material" : "Adicionar material";
+    $("nomeMaterial").value = item?.nome || "";
+    $("quantidadeMaterial").value = item?.quantidade ?? "";
+    $("valorMaterial").value = item?.valor ?? "";
+    setTimeout(() => $("nomeMaterial").focus(), 100);
+  } else {
+    editandoGuardado = Number.isInteger(index) ? index : null;
+    const item = editandoGuardado !== null ? guardados[editandoGuardado] : null;
+    $("tituloGuardado").textContent = item ? "Editar valor guardado" : "Adicionar valor guardado";
+    $("mesGuardado").value = item?.mes || "";
+    $("valorGuardadoInput").value = item?.valor ?? "";
+    setTimeout(() => $("mesGuardado").focus(), 100);
+  }
+  overlay.classList.remove("hidden");
+  overlay.setAttribute("aria-hidden", "false");
+  document.body.style.overflow = "hidden";
+}
+
+function fecharModal() {
+  $("modalOverlay")?.classList.add("hidden");
+  $("modalOverlay")?.setAttribute("aria-hidden", "true");
+  document.body.style.overflow = "";
+}
+
+function salvarMaterial(event) {
+  event.preventDefault();
+  const nome = $("nomeMaterial").value.trim();
+  const quantidade = Number($("quantidadeMaterial").value);
+  const valor = Number($("valorMaterial").value);
+  if (!nome || quantidade <= 0 || valor <= 0) return toast("Preencha os dados do material corretamente.");
+  const novo = { nome, quantidade, valor, status: "Pendente" };
+  if (editandoMaterial !== null) materiais[editandoMaterial] = novo;
+  else materiais.push(novo);
+  fecharModal();
+  renderizarTudo(true);
+  toast(editandoMaterial !== null ? "Material atualizado." : "Material adicionado.");
+  editandoMaterial = null;
+}
+
+function salvarGuardado(event) {
+  event.preventDefault();
+  const mes = $("mesGuardado").value;
+  const valor = Number($("valorGuardadoInput").value);
+  if (!mes || valor <= 0) return toast("Selecione o mês e informe um valor válido.");
+  const novo = { mes, valor };
+  if (editandoGuardado !== null) guardados[editandoGuardado] = novo;
+  else guardados.push(novo);
+  fecharModal();
+  renderizarTudo(true);
+  toast(editandoGuardado !== null ? "Valor atualizado." : "Valor guardado adicionado.");
+  editandoGuardado = null;
+}
+
+function excluirMaterial(index) {
+  if (!confirm("Deseja excluir este material?")) return;
+  materiais.splice(index, 1);
+  renderizarTudo(true);
+  toast("Material excluído.");
+}
+
+function excluirGuardado(index) {
+  if (!confirm("Deseja excluir este valor guardado?")) return;
+  guardados.splice(index, 1);
+  renderizarTudo(true);
+  toast("Valor excluído.");
 }
 
 function resetarTudo() {
-  if (!confirm("Tem certeza que deseja apagar tudo?")) return;
-
+  if (!confirm("Tem certeza que deseja apagar todos os materiais e valores guardados?")) return;
   materiais = [];
   guardados = [];
-
-  cancelarEdicaoMaterial();
-  cancelarEdicaoGuardado();
-  renderizar(true);
-  toast("Tudo foi resetado.");
-}
-
-function renderizar(sincronizar = true) {
-  atualizarStatusAutomatico();
-  salvarLocal();
-  renderizarMateriais();
-  renderizarGuardados();
-  atualizarResumo();
-  atualizarGrafico();
-
-  if (window.lucide) {
-    lucide.createIcons();
-  }
-
-  if (sincronizar) {
-    salvarOnline();
-  }
+  renderizarTudo(true);
+  toast("Todos os dados foram removidos.");
 }
 
 function sair() {
-  localStorage.removeItem("buildcontrol_session");
-  localStorage.removeItem("buildcontrol_user");
-  window.location.href = "login.html";
+  limparSessao();
+  window.location.replace("login.html");
 }
 
-function configurarEventos() {
-  $("btnMaterial")?.addEventListener("click", salvarMaterial);
-  $("cancelarMaterial")?.addEventListener("click", cancelarEdicaoMaterial);
-  $("btnGuardado")?.addEventListener("click", salvarGuardado);
-  $("cancelarGuardado")?.addEventListener("click", cancelarEdicaoGuardado);
-  $("btnResetar")?.addEventListener("click", resetarTudo);
-  $("btnSair")?.addEventListener("click", sair);
+function exportarBackup() {
+  const dados = { exportado_em: new Date().toISOString(), materiais, guardados };
+  const blob = new Blob([JSON.stringify(dados, null, 2)], { type: "application/json" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = `buildcontrol-backup-${new Date().toISOString().slice(0,10)}.json`;
+  link.click();
+  URL.revokeObjectURL(url);
+  toast("Backup exportado.");
 }
 
 function configurarPWA() {
-  if ("serviceWorker" in navigator) {
-    window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js").catch(console.error);
-    });
-  }
-
-  const btnInstalar = $("btnInstalar");
-  if (!btnInstalar) return;
-
-  window.addEventListener("beforeinstallprompt", (event) => {
+  if ("serviceWorker" in navigator) window.addEventListener("load", () => navigator.serviceWorker.register("./sw.js").catch(console.error));
+  window.addEventListener("beforeinstallprompt", event => {
     event.preventDefault();
     eventoInstalacao = event;
-    btnInstalar.classList.remove("hidden");
+    $("btnInstalar")?.classList.remove("hidden");
   });
-
-  btnInstalar.addEventListener("click", async () => {
-    if (!eventoInstalacao) return;
-
-    eventoInstalacao.prompt();
-    const escolha = await eventoInstalacao.userChoice;
-
-    if (escolha.outcome === "accepted") {
-      btnInstalar.classList.add("hidden");
-      toast("App instalado com sucesso!");
-    }
-
-    eventoInstalacao = null;
-  });
-
   window.addEventListener("appinstalled", () => {
-    btnInstalar.classList.add("hidden");
     eventoInstalacao = null;
+    $("btnInstalar")?.classList.add("hidden");
+    toast("BuildControl instalado com sucesso.");
   });
 }
 
-window.editarMaterial = editarMaterial;
-window.excluirMaterial = excluirMaterial;
-window.editarGuardado = editarGuardado;
-window.excluirGuardado = excluirGuardado;
-window.sair = sair;
+async function instalarApp() {
+  if (!eventoInstalacao) {
+    toast("No navegador, abra o menu e escolha ‘Instalar app’ ou ‘Adicionar à tela inicial’.");
+    return;
+  }
+  eventoInstalacao.prompt();
+  await eventoInstalacao.userChoice;
+  eventoInstalacao = null;
+  $("btnInstalar")?.classList.add("hidden");
+}
+
+function configurarEventos() {
+  document.addEventListener("click", event => {
+    const go = event.target.closest("[data-go-view]");
+    const open = event.target.closest("[data-open-modal]");
+    const editMat = event.target.closest("[data-edit-material]");
+    const delMat = event.target.closest("[data-delete-material]");
+    const editSav = event.target.closest("[data-edit-saving]");
+    const delSav = event.target.closest("[data-delete-saving]");
+    if (go) mudarView(go.dataset.goView);
+    if (open) abrirModal(open.dataset.openModal);
+    if (editMat) abrirModal("material", Number(editMat.dataset.editMaterial));
+    if (delMat) excluirMaterial(Number(delMat.dataset.deleteMaterial));
+    if (editSav) abrirModal("guardado", Number(editSav.dataset.editSaving));
+    if (delSav) excluirGuardado(Number(delSav.dataset.deleteSaving));
+  });
+  $("fecharModal")?.addEventListener("click", fecharModal);
+  $("modalOverlay")?.addEventListener("click", event => { if (event.target.id === "modalOverlay") fecharModal(); });
+  $("formMaterial")?.addEventListener("submit", salvarMaterial);
+  $("formGuardado")?.addEventListener("submit", salvarGuardado);
+  $("buscaMaterial")?.addEventListener("input", event => { buscaMaterial = event.target.value; renderizarMateriais(); });
+  $("filtrosMateriais")?.addEventListener("click", event => {
+    const botao = event.target.closest("[data-filter]");
+    if (!botao) return;
+    filtroMaterial = botao.dataset.filter;
+    document.querySelectorAll("#filtrosMateriais button").forEach(item => item.classList.toggle("active", item === botao));
+    renderizarMateriais();
+  });
+  $("btnResetar")?.addEventListener("click", resetarTudo);
+  $("btnSair")?.addEventListener("click", sair);
+  $("btnSairTopo")?.addEventListener("click", sair);
+  $("btnExportar")?.addEventListener("click", exportarBackup);
+  $("btnInstalar")?.addEventListener("click", instalarApp);
+  $("btnInstalarPerfil")?.addEventListener("click", instalarApp);
+  document.addEventListener("keydown", event => { if (event.key === "Escape") fecharModal(); });
+}
 
 async function iniciar() {
   configurarEventos();
   configurarPWA();
-
   const backup = lerBackupLocal();
-  materiais = backup.materiais;
-  guardados = backup.guardados;
-  renderizar(false);
-
+  materiais = Array.isArray(backup.materiais) ? backup.materiais : [];
+  guardados = Array.isArray(backup.guardados) ? backup.guardados : [];
+  renderizarTudo(false);
   await carregarDadosOnline();
 }
 
 iniciar();
-
-if (window.lucide) {
-  lucide.createIcons();
-}

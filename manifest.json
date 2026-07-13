@@ -1,26 +1,16 @@
 {
   "name": "BuildControl",
   "short_name": "BuildControl",
-  "description": "Controle de materiais, dinheiro guardado e gastos de obra.",
+  "description": "Controle de materiais e planejamento financeiro da sua obra.",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
-  "background_color": "#1f201d",
-  "theme_color": "#1f201d",
+  "background_color": "#07101d",
+  "theme_color": "#07101d",
   "orientation": "portrait",
   "lang": "pt-BR",
   "icons": [
-    {
-      "src": "imagens/icon-192.png",
-      "sizes": "192x192",
-      "type": "image/png",
-      "purpose": "any maskable"
-    },
-    {
-      "src": "imagens/icon-512.png",
-      "sizes": "512x512",
-      "type": "image/png",
-      "purpose": "any maskable"
-    }
+    {"src":"imagens/icon-192.png","sizes":"192x192","type":"image/png","purpose":"any maskable"},
+    {"src":"imagens/icon-512.png","sizes":"512x512","type":"image/png","purpose":"any maskable"}
   ]
 }

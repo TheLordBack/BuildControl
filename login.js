@@ -1,116 +1,82 @@
-const API_BASE_URL = " https://buildcontrol-api.vercel.app";
-
-
+const API_BASE_URL = "https://buildcontrol-api.vercel.app";
 
 document.addEventListener("DOMContentLoaded", () => {
-  const tabLogin = document.getElementById("tabLogin");
-  const tabCadastro = document.getElementById("tabCadastro");
-  const authForm = document.getElementById("authForm");
-  const nomeUsuario = document.getElementById("nomeUsuario");
-  const emailUsuario = document.getElementById("emailUsuario");
-  const senhaUsuario = document.getElementById("senhaUsuario");
-  const btnAuth = document.getElementById("btnAuth");
-  const authMensagem = document.getElementById("authMensagem");
-
   let modoCadastro = false;
+  const $ = id => document.getElementById(id);
+  const tabLogin = $("tabLogin");
+  const tabCadastro = $("tabCadastro");
+  const authForm = $("authForm");
+  const campoNome = $("campoNome");
+  const nomeUsuario = $("nomeUsuario");
+  const emailUsuario = $("emailUsuario");
+  const senhaUsuario = $("senhaUsuario");
+  const btnAuth = $("btnAuth");
+  const authMensagem = $("authMensagem");
 
-  function mostrarMensagem(texto, tipo = "") {
-    if (!authMensagem) return;
+  try {
+    const sessao = JSON.parse(localStorage.getItem("buildcontrol_session"));
+    if (sessao?.access_token) window.location.replace("index.html");
+  } catch {}
+
+  function mensagem(texto, tipo = "") {
     authMensagem.textContent = texto;
     authMensagem.className = `auth-message ${tipo}`;
   }
 
   function atualizarTela() {
-    if (modoCadastro) {
-      tabCadastro.classList.add("active");
-      tabLogin.classList.remove("active");
-      nomeUsuario.classList.remove("hidden");
-      btnAuth.textContent = "Cadastrar";
-      senhaUsuario.placeholder = "Crie uma senha";
-    } else {
-      tabLogin.classList.add("active");
-      tabCadastro.classList.remove("active");
-      nomeUsuario.classList.add("hidden");
-      btnAuth.textContent = "Entrar";
-      senhaUsuario.placeholder = "Senha";
-    }
-
-    mostrarMensagem("");
+    tabLogin.classList.toggle("active", !modoCadastro);
+    tabCadastro.classList.toggle("active", modoCadastro);
+    campoNome.classList.toggle("hidden", !modoCadastro);
+    $("authTitulo").textContent = modoCadastro ? "Crie sua conta" : "Acesse sua conta";
+    $("authSubtitulo").textContent = modoCadastro ? "Comece agora a organizar sua obra." : "Entre para continuar acompanhando sua obra.";
+    btnAuth.textContent = modoCadastro ? "Criar conta" : "Entrar";
+    senhaUsuario.autocomplete = modoCadastro ? "new-password" : "current-password";
+    mensagem("");
   }
 
-  tabLogin.addEventListener("click", () => {
-    modoCadastro = false;
-    atualizarTela();
-  });
+  tabLogin.addEventListener("click", () => { modoCadastro = false; atualizarTela(); });
+  tabCadastro.addEventListener("click", () => { modoCadastro = true; atualizarTela(); });
 
-  tabCadastro.addEventListener("click", () => {
-    modoCadastro = true;
-    atualizarTela();
-  });
-
-  authForm.addEventListener("submit", async (event) => {
+  authForm.addEventListener("submit", async event => {
     event.preventDefault();
-
     const nome = nomeUsuario.value.trim();
     const email = emailUsuario.value.trim();
-    const senha = senhaUsuario.value.trim();
-
-    if (!email || !senha) {
-      mostrarMensagem("Preencha email e senha.", "erro");
-      return;
-    }
-
-    if (modoCadastro && !nome) {
-      mostrarMensagem("Preencha seu nome.", "erro");
-      return;
-    }
-
+    const senha = senhaUsuario.value;
+    if (!email || !senha) return mensagem("Preencha email e senha.", "erro");
+    if (modoCadastro && !nome) return mensagem("Informe seu nome.", "erro");
+    if (senha.length < 6) return mensagem("A senha precisa ter pelo menos 6 caracteres.", "erro");
     btnAuth.disabled = true;
-    btnAuth.textContent = modoCadastro ? "Cadastrando..." : "Entrando...";
-
+    btnAuth.textContent = modoCadastro ? "Criando conta..." : "Entrando...";
+    mensagem("Conectando...");
     try {
       const endpoint = modoCadastro ? "/api/cadastro" : "/api/login";
-
       const resposta = await fetch(`${API_BASE_URL}${endpoint}`, {
         method: "POST",
-        headers: {
-          "Content-Type": "application/json"
-        },
-        body: JSON.stringify({
-          nome,
-          email,
-          senha
-        })
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ nome, email, senha })
       });
-
-      const resultado = await resposta.json();
-
-      if (!resposta.ok) {
-        mostrarMensagem(resultado.erro || "Erro ao processar.", "erro");
-        return;
-      }
-
+      const texto = await resposta.text();
+      let resultado = {};
+      try { resultado = texto ? JSON.parse(texto) : {}; } catch { resultado = { erro: texto }; }
+      if (!resposta.ok) throw new Error(resultado.erro || "Não foi possível concluir.");
       if (modoCadastro) {
-        mostrarMensagem("Cadastro criado. Agora faça login.", "sucesso");
-
         modoCadastro = false;
         atualizarTela();
-
         nomeUsuario.value = "";
         senhaUsuario.value = "";
+        mensagem("Conta criada. Agora entre com email e senha.", "sucesso");
         return;
       }
-
+      if (!resultado.session?.access_token) throw new Error("A API não retornou uma sessão válida.");
       localStorage.setItem("buildcontrol_session", JSON.stringify(resultado.session));
-      localStorage.setItem("buildcontrol_user", JSON.stringify(resultado.usuario));
-
-      window.location.href = "index.html";
-    } catch (error) {
-      console.error(error);
-      mostrarMensagem("Erro de conexão com a API.", "erro");
+      localStorage.setItem("buildcontrol_user", JSON.stringify(resultado.usuario || { nome, email }));
+      window.location.replace("index.html");
+    } catch (erro) {
+      console.error(erro);
+      mensagem(erro.message || "Erro de conexão com a API.", "erro");
     } finally {
       btnAuth.disabled = false;
-      btnAuth.textContent = modoCadastro ? "Cadastrar" : "Entrar";
+      btnAuth.textContent = modoCadastro ? "Criar conta" : "Entrar";
     }
   });
 

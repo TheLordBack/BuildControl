@@ -1,229 +1,195 @@
 <!DOCTYPE html>
 <html lang="pt-BR">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
   <title>BuildControl</title>
-
-  <meta name="theme-color" content="#1f201d" />
-  <meta name="description" content="App para controle de materiais, dinheiro guardado e gastos de obra." />
-
-  <link rel="manifest" href="manifest.json" />
-  <link rel="stylesheet" href="style.css" />
-
-  <link rel="icon" href="imagens/icon-192.png" />
-  <link rel="apple-touch-icon" href="imagens/icon-192.png" />
-
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-<script src="https://unpkg.com/lucide@latest"></script>
+  <meta name="description" content="Controle de materiais e planejamento financeiro da sua obra.">
+  <meta name="theme-color" content="#07101d">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="imagens/icon-192.png">
+  <link rel="apple-touch-icon" href="imagens/icon-192.png">
+  <link rel="stylesheet" href="style.css">
 </head>
-
-<body>
-  <main id="appContent" class="app">
-   <header class="topbar mobile-topbar">
-  <div class="brand">
-    <div class="brand-icon">
-      <i data-lucide="building-2"></i>
-    </div>
-
-    <div class="brand-title">
-      <h1>Build<span>Control</span></h1>
-      <small id="usuarioLogado">Controle sua obra</small>
-    </div>
-  </div>
-
-  <button id="btnSair" class="logout-btn" type="button">
-    <i data-lucide="log-out"></i>
-    <span>Sair</span>
-  </button>
-</header>
-
-    <section class="sync-line">
-      <span id="syncStatus">Conectando...</span>
-    </section>
-
-    <button id="btnInstalar" class="install-btn hidden">📲 Instalar app</button>
-
-    <section class="summary summary-dashboard">
-  <article class="summary-card summary-blue">
-    <div class="summary-icon">
-      <i data-lucide="layers-3"></i>
-    </div>
-
-    <div class="summary-info">
-      <p>Total materiais</p>
-      <strong id="totalMateriais">R$ 0,00</strong>
-      <small id="qtdMateriaisResumo">0 itens cadastrados</small>
-    </div>
-
-    <svg class="mini-chart blue-chart" viewBox="0 0 100 45">
-      <polyline points="5,35 25,34 42,26 58,30 74,12 92,18" />
-    </svg>
-  </article>
-
-  <article class="summary-card summary-green">
-    <div class="summary-icon">
-      <i data-lucide="dollar-sign"></i>
-    </div>
-
-    <div class="summary-info">
-      <p>Total guardado</p>
-      <strong id="totalGuardado">R$ 0,00</strong>
-      <small id="qtdMesesResumo">0 meses registrados</small>
-    </div>
-
-    <svg class="mini-chart green-chart" viewBox="0 0 100 45">
-      <polyline points="5,35 18,32 30,18 43,30 57,10 70,20 84,6 95,12" />
-    </svg>
-  </article>
-
-  <article class="summary-card summary-orange">
-    <div class="summary-icon">
-      <i data-lucide="wallet"></i>
-    </div>
-
-    <div class="summary-info">
-      <p>Falta pagar</p>
-      <strong id="faltaPagar">R$ 0,00</strong>
-      <small id="porcentagemFalta">0% do total</small>
-    </div>
-
-    <svg class="mini-chart orange-chart" viewBox="0 0 100 45">
-      <polyline points="5,34 22,18 36,29 52,25 70,24 84,36 95,38" />
-    </svg>
-  </article>
-</section>
-
-    <!-- MATERIAIS -->
-    <section class="box section-card">
-      <div class="box-title">
-        <div class="box-title-left">
-          <span class="ico"><i data-lucide="boxes"></i></span>
-<h2>Materiais</h2>
-        </div>
-
-        <button class="cancel-btn hidden" id="cancelarMaterial" type="button">
-          Cancelar
-        </button>
-      </div>
-
-      <div class="material-inline-form">
-  <div class="field-group field-material-name">
-    <label for="nomeMaterial">Nome do material</label>
-    <input id="nomeMaterial" type="text" placeholder="Ex.: Telha, Cimento..." />
-  </div>
-
-  <div class="field-group">
-    <label for="quantidadeMaterial">Quantidade</label>
-    <input id="quantidadeMaterial" type="number" placeholder="Ex.: 20" min="0" step="0.01" />
-  </div>
-
-  <div class="field-group">
-    <label for="valorMaterial">Valor unit. (R$)</label>
-    <input id="valorMaterial" type="number" placeholder="Ex.: 15,00" min="0" step="0.01" />
-  </div>
-
-  <button class="add-btn material-add-btn" id="btnMaterial" type="button">
-    + Adicionar material
-  </button>
-</div>
-
-      <div class="table-wrap">
-        <table>
-          <thead>
-            <tr>
-              <th>Material</th>
-              <th>Qtd</th>
-              <th>Valor unit.</th>
-              <th>Total</th>
-              <th>Status</th>
-              <th>Ações</th>
-            </tr>
-          </thead>
-          <tbody id="listaMateriais"></tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- GUARDADO -->
-   <!-- GUARDADO -->
-<section class="box section-card money-section">
-  <div class="money-header">
-    <div class="box-title-left money-title">
-      <span class="ico"><i data-lucide="circle-dollar-sign"></i></span>
-      <h2>Dinheiro guardado por mês</h2>
-    </div>
-
-    <div class="money-inline-form">
-      <button class="cancel-btn hidden" id="cancelarGuardado" type="button">
-        Cancelar
-      </button>
-
-      <div class="field-group">
-        <select id="mesGuardado" class="month-select">
-          <option value="">Selecione o mês</option>
-          <option value="Janeiro">Janeiro</option>
-          <option value="Fevereiro">Fevereiro</option>
-          <option value="Março">Março</option>
-          <option value="Abril">Abril</option>
-          <option value="Maio">Maio</option>
-          <option value="Junho">Junho</option>
-          <option value="Julho">Julho</option>
-          <option value="Agosto">Agosto</option>
-          <option value="Setembro">Setembro</option>
-          <option value="Outubro">Outubro</option>
-          <option value="Novembro">Novembro</option>
-          <option value="Dezembro">Dezembro</option>
-        </select>
-      </div>
-
-      <div class="field-group">
-        <label class="money-label" for="valorGuardadoInput">Valor (R$)</label>
-        <input id="valorGuardadoInput" type="number" placeholder="Ex.: 150,00" min="0" step="0.01" />
-      </div>
-
-      <button class="add-btn money-add-btn" id="btnGuardado" type="button">
-        + Adicionar valor
-      </button>
-    </div>
-  </div>
-
-  <div id="listaGuardado" class="money-board"></div>
-
-  <div class="money-total-row">
-    <div>
-      <i data-lucide="circle-dollar-sign"></i>
-      <span>Total guardado até o momento</span>
-    </div>
-
-    <strong id="totalGuardadoRodape">R$ 0,00</strong>
-  </div>
-</section>
-
-    <!-- GRÁFICO -->
-    <section class="box section-card">
-      <div class="box-title">
-        <div class="box-title-left">
-          <span class="ico"><i data-lucide="chart-column"></i></span>
-<h2>Evolução do dinheiro guardado</h2>
+<body class="app-page">
+  <div class="app-shell">
+    <header class="topbar">
+      <div class="brand-lockup">
+        <div class="brand-symbol" aria-hidden="true"><span>B</span></div>
+        <div>
+          <h1>Build<span>Control</span></h1>
+          <small>Planeje. Controle. Construa.</small>
         </div>
       </div>
-
-      <div class="chart-area chart-mobile">
-        <canvas id="graficoGuardado"></canvas>
+      <div class="top-actions">
+        <span id="syncStatus" class="sync-pill"><i></i> Conectando...</span>
+        <button id="btnSairTopo" class="icon-button" type="button" title="Sair" aria-label="Sair">↗</button>
       </div>
-    </section>
-  </main>
+    </header>
 
-  <footer id="footerBar" class="footer-bar">
-    <button class="reset-btn" id="btnResetar" type="button">🗑 Resetar tudo</button>
-    <p class="developer">Desenvolvido por <strong>Wellington Andrade</strong></p>
-  </footer>
+    <button id="btnInstalar" class="install-banner hidden" type="button">Instalar BuildControl no celular</button>
 
-    <script src="script.js"></script>
-  <script>
-    lucide.createIcons();
-  </script>
+    <main class="content">
+      <section id="view-home" class="app-view active" data-view="home">
+        <article class="hero-card">
+          <div class="hero-copy">
+            <span class="eyebrow">PAINEL DA OBRA</span>
+            <h2>Olá, <span id="nomeUsuarioHome">Wellington</span>! 👋</h2>
+            <p>Veja quanto da sua lista de materiais já está coberta pelo dinheiro guardado.</p>
+            <div class="hero-progress-line">
+              <div>
+                <strong id="progressoPercentual">0%</strong>
+                <span>cobertura financeira</span>
+              </div>
+              <small id="progressoLegenda">Comece adicionando materiais</small>
+            </div>
+            <div class="progress-track"><span id="progressoBarra"></span></div>
+          </div>
+          <div class="hero-art" aria-hidden="true">
+            <div class="sun"></div>
+            <div class="crane"><i></i><b></b><span></span></div>
+            <div class="building"><i></i><i></i><i></i><i></i><i></i><i></i></div>
+          </div>
+        </article>
+
+        <section class="kpi-grid" aria-label="Resumo financeiro">
+          <article class="kpi-card yellow">
+            <div class="kpi-icon">▤</div>
+            <div><small>Custo dos materiais</small><strong id="totalMateriais">R$ 0,00</strong><span id="qtdMateriaisResumo">0 itens</span></div>
+          </article>
+          <article class="kpi-card green">
+            <div class="kpi-icon">$</div>
+            <div><small>Total guardado</small><strong id="totalGuardado">R$ 0,00</strong><span id="qtdMesesResumo">0 meses</span></div>
+          </article>
+          <article class="kpi-card red">
+            <div class="kpi-icon">◷</div>
+            <div><small>Falta pagar</small><strong id="faltaPagar">R$ 0,00</strong><span id="porcentagemFalta">0% do total</span></div>
+          </article>
+        </section>
+
+        <section class="section-block">
+          <div class="section-heading"><div><span class="eyebrow">ATALHOS</span><h3>Ações rápidas</h3></div></div>
+          <div class="quick-grid">
+            <button class="quick-card" type="button" data-open-modal="material"><span>＋</span><strong>Novo material</strong><small>Adicionar à lista</small></button>
+            <button class="quick-card" type="button" data-open-modal="guardado"><span>＄</span><strong>Guardar valor</strong><small>Registrar um mês</small></button>
+            <button class="quick-card" type="button" data-go-view="reports"><span>⌁</span><strong>Relatórios</strong><small>Analisar os dados</small></button>
+          </div>
+        </section>
+
+        <section class="dashboard-grid">
+          <article class="panel-card">
+            <div class="section-heading compact"><div><span class="eyebrow">ÚLTIMOS ITENS</span><h3>Materiais recentes</h3></div><button class="text-button" data-go-view="materials">Ver todos</button></div>
+            <div id="materiaisRecentes" class="recent-list"></div>
+          </article>
+          <article class="panel-card">
+            <div class="section-heading compact"><div><span class="eyebrow">DISTRIBUIÇÃO</span><h3>Custo por categoria</h3></div></div>
+            <div class="category-summary">
+              <div id="donutHome" class="donut-chart"><div><strong id="donutHomeTotal">R$ 0</strong><small>Total</small></div></div>
+              <div id="categoriasHome" class="legend-list"></div>
+            </div>
+          </article>
+        </section>
+      </section>
+
+      <section id="view-materials" class="app-view" data-view="materials">
+        <div class="page-heading">
+          <div><span class="eyebrow">PLANEJAMENTO</span><h2>Materiais da obra</h2><p>Organize custos, quantidades e acompanhe o que já está coberto.</p></div>
+          <button class="primary-button compact" type="button" data-open-modal="material">＋ Adicionar</button>
+        </div>
+        <div class="toolbar-card">
+          <label class="search-field"><span>⌕</span><input id="buscaMaterial" type="search" placeholder="Buscar material..."></label>
+          <div class="filter-tabs" id="filtrosMateriais">
+            <button class="active" type="button" data-filter="Todos">Todos</button>
+            <button type="button" data-filter="Pendente">Pendentes</button>
+            <button type="button" data-filter="Parcial">Parciais</button>
+            <button type="button" data-filter="Concluído">Concluídos</button>
+          </div>
+        </div>
+        <div id="listaMateriais" class="materials-list"></div>
+      </section>
+
+      <section id="view-savings" class="app-view" data-view="savings">
+        <div class="page-heading">
+          <div><span class="eyebrow">RESERVA DA OBRA</span><h2>Dinheiro guardado</h2><p>Acompanhe os valores separados em cada mês.</p></div>
+          <button class="primary-button compact" type="button" data-open-modal="guardado">＋ Adicionar</button>
+        </div>
+        <article class="savings-hero">
+          <div><span>Total acumulado</span><strong id="totalGuardadoPagina">R$ 0,00</strong><small id="mediaGuardada">Média mensal: R$ 0,00</small></div>
+          <div class="coin-stack" aria-hidden="true"><i></i><i></i><i></i></div>
+        </article>
+        <div id="listaGuardado" class="savings-grid"></div>
+      </section>
+
+      <section id="view-reports" class="app-view" data-view="reports">
+        <div class="page-heading">
+          <div><span class="eyebrow">ANÁLISE</span><h2>Relatórios</h2><p>Uma visão clara dos custos e da evolução da sua reserva.</p></div>
+        </div>
+        <section class="report-grid">
+          <article class="panel-card report-donut-card">
+            <div class="section-heading compact"><div><span class="eyebrow">MATERIAIS</span><h3>Distribuição dos custos</h3></div></div>
+            <div class="report-donut-wrap">
+              <div id="donutReport" class="donut-chart large"><div><strong id="donutReportTotal">R$ 0</strong><small>Total</small></div></div>
+              <div id="categoriasRelatorio" class="legend-list"></div>
+            </div>
+          </article>
+          <article class="panel-card report-progress-card">
+            <div class="section-heading compact"><div><span class="eyebrow">COBERTURA</span><h3>Resumo financeiro</h3></div></div>
+            <div class="big-progress"><strong id="relatorioPercentual">0%</strong><span>dos materiais cobertos</span></div>
+            <div class="progress-track large"><span id="relatorioBarra"></span></div>
+            <div class="report-values"><div><span>Planejado</span><strong id="relatorioPlanejado">R$ 0,00</strong></div><div><span>Guardado</span><strong id="relatorioGuardado">R$ 0,00</strong></div><div><span>Restante</span><strong id="relatorioRestante">R$ 0,00</strong></div></div>
+          </article>
+        </section>
+        <article class="panel-card chart-panel">
+          <div class="section-heading compact"><div><span class="eyebrow">EVOLUÇÃO</span><h3>Dinheiro guardado por mês</h3></div></div>
+          <div id="graficoGuardado" class="line-chart" role="img" aria-label="Gráfico da evolução do dinheiro guardado"></div>
+        </article>
+      </section>
+
+      <section id="view-profile" class="app-view" data-view="profile">
+        <div class="page-heading"><div><span class="eyebrow">CONTA</span><h2>Perfil e configurações</h2><p>Gerencie sua sessão, instalação e backup.</p></div></div>
+        <article class="profile-card">
+          <div class="avatar" id="avatarUsuario">W</div>
+          <div><h3 id="nomeUsuarioPerfil">Wellington</h3><p id="emailUsuarioPerfil">Usuário do BuildControl</p><span class="online-badge">● Dados sincronizados</span></div>
+        </article>
+        <section class="settings-card">
+          <button id="btnExportar" type="button"><span>⇩</span><div><strong>Exportar backup</strong><small>Baixar materiais e valores em JSON</small></div><b>›</b></button>
+          <button id="btnInstalarPerfil" type="button"><span>▣</span><div><strong>Instalar aplicativo</strong><small>Adicionar o BuildControl à tela inicial</small></div><b>›</b></button>
+          <button id="btnResetar" class="danger-row" type="button"><span>⌫</span><div><strong>Apagar todos os dados</strong><small>Remove materiais e valores guardados</small></div><b>›</b></button>
+          <button id="btnSair" class="danger-row" type="button"><span>↗</span><div><strong>Sair da conta</strong><small>Encerrar a sessão atual</small></div><b>›</b></button>
+        </section>
+        <p class="developer-note">BuildControl • Desenvolvido por Wellington Andrade</p>
+      </section>
+    </main>
+
+    <nav class="bottom-nav" aria-label="Navegação principal">
+      <button class="nav-item active" type="button" data-go-view="home"><span>⌂</span><small>Início</small></button>
+      <button class="nav-item" type="button" data-go-view="materials"><span>▦</span><small>Materiais</small></button>
+      <button class="nav-item nav-add" type="button" data-open-modal="material" aria-label="Adicionar material"><span>＋</span></button>
+      <button class="nav-item" type="button" data-go-view="savings"><span>＄</span><small>Guardado</small></button>
+      <button class="nav-item" type="button" data-go-view="reports"><span>⌁</span><small>Relatórios</small></button>
+      <button class="nav-item desktop-profile" type="button" data-go-view="profile"><span>◎</span><small>Perfil</small></button>
+    </nav>
+  </div>
+
+  <div id="modalOverlay" class="modal-overlay hidden" aria-hidden="true">
+    <div class="modal-sheet" role="dialog" aria-modal="true">
+      <button id="fecharModal" class="modal-close" type="button" aria-label="Fechar">×</button>
+      <form id="formMaterial" class="modal-form hidden">
+        <span class="eyebrow">MATERIAL</span><h2 id="tituloMaterial">Adicionar material</h2><p>Informe o item, a quantidade e o valor unitário.</p>
+        <label><span>Nome do material</span><input id="nomeMaterial" type="text" placeholder="Ex.: Cimento CP II" required></label>
+        <div class="form-row"><label><span>Quantidade</span><input id="quantidadeMaterial" type="number" min="0" step="0.01" placeholder="20" required></label><label><span>Valor unitário</span><input id="valorMaterial" type="number" min="0" step="0.01" placeholder="38,90" required></label></div>
+        <button id="btnMaterial" class="primary-button" type="submit">Salvar material</button>
+      </form>
+      <form id="formGuardado" class="modal-form hidden">
+        <span class="eyebrow">RESERVA</span><h2 id="tituloGuardado">Adicionar valor guardado</h2><p>Registre o valor separado para a obra em um mês.</p>
+        <label><span>Mês</span><select id="mesGuardado" required><option value="">Selecione</option><option>Janeiro</option><option>Fevereiro</option><option>Março</option><option>Abril</option><option>Maio</option><option>Junho</option><option>Julho</option><option>Agosto</option><option>Setembro</option><option>Outubro</option><option>Novembro</option><option>Dezembro</option></select></label>
+        <label><span>Valor guardado</span><input id="valorGuardadoInput" type="number" min="0" step="0.01" placeholder="500,00" required></label>
+        <button id="btnGuardado" class="primary-button" type="submit">Salvar valor</button>
+      </form>
+    </div>
+  </div>
+
+  <div id="toastContainer" class="toast-container" aria-live="polite"></div>
+  <script src="script.js"></script>
 </body>
 </html>
